@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dload - Fast YouTube Video Downloader</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="logo">
+            <i class="fa-solid fa-cloud-arrow-down"></i>
+            <span>Dload</span>
+        </div>
+    </nav>
+
+    <main class="hero-section">
+        <div class="hero-content">
+            <h1 class="hero-title">Download Video and Audio</h1>
+            <p class="hero-subtitle">Fast, free, and high-quality YouTube downloader. Convert and download YouTube videos to MP4 or MP3 easily.</p>
+            
+            <div class="search-container">
+                <div class="input-wrapper">
+                    <i class="fa-solid fa-link"></i>
+                    <input type="text" id="url" placeholder="Search or paste link here..." autocomplete="off">
+                </div>
+                <button id="fetch-btn" onclick="fetchInfo()">
+                    <span class="btn-text">Start</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+            
+            <div id="loading" class="loading-spinner hidden">
+                <div class="spinner"></div>
+                <p>Fetching video info...</p>
+            </div>
+            
+            <div id="error-message" class="error-message hidden">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <span id="error-text">Failed to fetch video. Please check the URL.</span>
+            </div>
+
+            <!-- Single Video Result Card -->
+            <div id="result-card" class="result-card hidden">
+                <div class="result-layout">
+                    <div class="thumbnail-col">
+                        <div class="video-preview-container" id="video-preview-container">
+                            <img id="video-thumb" src="" alt="Video Thumbnail">
+                        </div>
+                    </div>
+                    <div class="info-col">
+                        <h2 id="video-title" class="video-title">Video Title Goes Here</h2>
+                        
+                        <div class="qualities-container" id="qualities-container">
+                            <!-- Quality options will be injected here -->
+                        </div>
+                        
+                        <div id="progress-container" class="progress-container hidden">
+                            <div class="progress-info">
+                                <span id="progress-status">Downloading...</span>
+                                <span id="progress-percent">0%</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                            </div>
+                            <div class="progress-stats">
+                                <span id="progress-speed">Speed: --</span>
+                                <span id="progress-eta">ETA: --</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Playlist Result Card -->
+            <div id="playlist-card" class="result-card playlist-card hidden">
+                <h2 id="playlist-title" class="video-title" style="text-align: left;">Playlist Title</h2>
+                <div id="playlist-items" class="playlist-items">
+                    <!-- Playlist entries will be injected here -->
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>Created by <strong>Mc senpai</strong></p>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

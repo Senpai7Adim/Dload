@@ -1,0 +1,14 @@
+venv/
+downloads/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.env
+.env.*
+.git/
+.gitignore
+*.md
+pyrightconfig.json

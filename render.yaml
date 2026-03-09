@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: dload
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_ENV
+        value: production

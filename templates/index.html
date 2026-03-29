@@ -9,12 +9,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="shortcut icon" href="../static/assets/dload.png" type="image/x-icon">
 </head>
 <body>
 
     <nav class="navbar">
         <div class="logo">
-            <i class="fa-solid fa-cloud-arrow-down"></i>
+            <img src="../static/assets/dload.png" alt="" srcset="" sizes="50" class="dload-logo">
+            <style>
+                .dload-logo{
+                    width: 60px;
+                }
+            </style>
             <span>Dload</span>
         </div>
     </nav>
@@ -27,12 +33,20 @@
             <div class="search-container">
                 <div class="input-wrapper">
                     <i class="fa-solid fa-link"></i>
-                    <input type="text" id="url" placeholder="Search or paste link here..." autocomplete="off">
+                    <input type="text" id="url" placeholder="Search or paste link here..." autocomplete="off" oninput="toggleEmptyState()">
                 </div>
                 <button id="fetch-btn" onclick="fetchInfo()">
                     <span class="btn-text">Start</span>
                     <i class="fa-solid fa-arrow-right"></i>
                 </button>
+            </div>
+
+            <div id="empty-state" class="empty-state">
+                <div class="animated-icon">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                </div>
+                <h3>Ready to download?</h3>
+                <p>Paste a YouTube link or search for your favorite music.</p>
             </div>
             
             <div id="loading" class="loading-spinner hidden">
@@ -53,6 +67,7 @@
                             <img id="video-thumb" src="" alt="Video Thumbnail">
                         </div>
                     </div>
+
                     <div class="info-col">
                         <h2 id="video-title" class="video-title">Video Title Goes Here</h2>
                         
@@ -60,26 +75,28 @@
                             <!-- Quality options will be injected here -->
                         </div>
                         
-                        <div id="progress-container" class="progress-container hidden">
-                            <div class="progress-info">
-                                <span id="progress-status">Downloading...</span>
-                                <span id="progress-percent">0%</span>
-                            </div>
-                            <div class="progress-bar-bg">
-                                <div class="progress-bar-fill" id="progress-bar-fill"></div>
-                            </div>
-                            <div class="progress-stats">
-                                <span id="progress-speed">Speed: --</span>
-                                <span id="progress-eta">ETA: --</span>
-                            </div>
-                        </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Concurrent Downloads Section -->
+            <div id="downloads-container" class="downloads-container hidden">
+                <div class="downloads-header">
+                    <h3><i class="fa-solid fa-circle-down"></i> Active Downloads (<span id="active-count">0</span>)</h3>
+                </div>
+                <div id="tasks-list" class="tasks-list">
+                    <!-- Progress bars for multiple tasks injected here -->
                 </div>
             </div>
             
             <!-- Playlist Result Card -->
             <div id="playlist-card" class="result-card playlist-card hidden">
-                <h2 id="playlist-title" class="video-title" style="text-align: left;">Playlist Title</h2>
+                <div class="playlist-card-header">
+                    <h2 id="playlist-title" class="video-title">Playlist Title</h2>
+                    <button id="download-all-btn" class="download-all-btn" onclick="downloadAll()">
+                        <i class="fa-solid fa-layer-group"></i> Download All (MP3)
+                    </button>
+                </div>
                 <div id="playlist-items" class="playlist-items">
                     <!-- Playlist entries will be injected here -->
                 </div>
@@ -92,6 +109,6 @@
         <p>Created by <strong>Mc senpai</strong></p>
     </footer>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=1.1"></script>
 </body>
 </html>

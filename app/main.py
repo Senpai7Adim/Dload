@@ -40,48 +40,75 @@ def resolve_entry_url(entry: dict) -> str | None:
     Flat extraction often returns just a numeric ID in `url` for non-YouTube platforms.
     We prefer `webpage_url`, then fall back to building from extractor info, then bare `url`.
     """
+    # 1. Direct webpage_url is always best
     webpage_url = entry.get("webpage_url")
     if webpage_url and webpage_url.startswith("http"):
         return webpage_url
 
+    # 2. If 'url' looks like a full URL, use it
     bare_url = entry.get("url", "")
-
-    # If it looks like a real URL, use it
-    if bare_url.startswith("http"):
+    if bare_url and bare_url.startswith("http"):
         return bare_url
 
-    # Try to reconstruct from extractor + id
+    # 3. Reconstruct from ID and extractor
     extractor = (entry.get("ie_key") or entry.get("extractor") or "").lower()
-    video_id = entry.get("id") or bare_url
+    video_id = entry.get("id") or (bare_url if bare_url and not bare_url.startswith("http") else None)
+    
+    if not video_id:
+        return None
 
     reconstructed = {
         "youtube": f"https://www.youtube.com/watch?v={video_id}",
         "facebook": f"https://www.facebook.com/watch?v={video_id}",
-        "tiktok": None,   # TikTok URLs can't be reconstructed from ID alone
+        "vimeo": f"https://vimeo.com/{video_id}",
+        "dailymotion": f"https://www.dailymotion.com/video/{video_id}",
+        "tiktok": None, # TikTok needs more than just ID
         "instagram": None,
         "twitter": None,
     }
+    
     for key, tmpl in reconstructed.items():
-        if extractor.startswith(key) and tmpl:
+        if key in extractor and tmpl:
             return tmpl
 
-    # Last resort — return whatever we have
-    return bare_url or None
+    # 4. If nothing else works and it's not a URL, it's just an ID we can't use directly
+    return None
 
+
+class YDLLogger:
+    def debug(self, msg):
+        # yt-dlp debug messages can be very verbose, only care about progress
+        if msg.startswith("[debug] ") or msg.startswith("[download] "):
+            pass
+        else:
+            print(f"[YDL-DEBUG] {msg}")
+
+    def info(self, msg):
+        print(f"[YDL-INFO] {msg}")
+
+    def warning(self, msg):
+        print(f"[YDL-WARNING] {msg}")
+
+    def error(self, msg):
+        print(f"[YDL-ERROR] {msg}")
 
 # Common yt-dlp options shared across requests
 BASE_YDL_OPTS = {
     "quiet": True,
-    "no_warnings": True,
+    "no_warnings": False,
+    "logger": YDLLogger(),
     "socket_timeout": 30,
-    "retries": 5,
+    "retries": 10,
+    "fragment_retries": 10,
     "http_headers": {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
+            "Chrome/123.0.0.0 Safari/537.36"
         )
     },
+    "nocheckcertificate": True,
+    "geo_bypass": True,
 }
 
 
@@ -131,63 +158,93 @@ async def info(url: str = Form(...)):
             "url": url,
         }
 
-    # Single video — extract formats
-    formats = []
-    for f in info_data.get("formats") or []:
-        filesize = f.get("filesize") or f.get("filesize_approx") or 0
+    # Single video — extract and filter formats for a better UI
+    raw_formats = info_data.get("formats") or []
+    processed_formats = []
+    
+    # 1. Inject Virtual MP3 Options (Always available via our worker conversion)
+    processed_formats.append({
+        "format_id": "mp3",
+        "resolution": "Audio (MP3)",
+        "label": "High Quality MP3",
+        "ext": "mp3",
+        "type": "audio",
+        "filesize": 0,
+        "note": "320kbps",
+        "priority": 10
+    })
+
+    # 2. Extract and Categorize Real Formats
+    for f in raw_formats:
         vcodec = f.get("vcodec") or "none"
         acodec = f.get("acodec") or "none"
+        ext = f.get("ext", "")
         height = f.get("height")
-        resolution = f.get("resolution") or (f"{height}p" if height else None) or "unknown"
+        
+        # We only really care about MP4 for the UI to keep it simple, 
+        # as we merge/convert to MP4 anyway.
+        if vcodec != "none" and ext != "mp4":
+            continue
+            
+        res_val = height if height else 0
+        if res_val == 0: continue # Skip mystery resolutions
+        
+        label = f"{res_val}p"
+        if res_val >= 2160: label += " (4K)"
+        elif res_val >= 1080: label += " (Full HD)"
+        elif res_val >= 720: label += " (HD)"
 
-        if vcodec != "none" and acodec != "none":
-            # Pre-merged (e.g. TikTok, Facebook, or YouTube combined formats)
-            formats.append({
-                "format_id": f.get("format_id"),
-                "resolution": resolution,
-                "ext": f.get("ext"),
-                "type": "video",
-                "filesize": filesize,
-                "tbr": f.get("tbr") or 0,
-            })
-        elif vcodec == "none" and acodec != "none":
-            # Audio only
-            formats.append({
-                "format_id": f.get("format_id"),
-                "resolution": "Audio",
-                "ext": f.get("ext"),
-                "type": "audio",
-                "filesize": filesize,
-                "tbr": f.get("tbr") or 0,
-            })
-        elif vcodec != "none" and acodec == "none":
-            # Video only (will be merged with audio at download time)
-            formats.append({
-                "format_id": f.get("format_id"),
-                "resolution": resolution,
-                "ext": f.get("ext"),
-                "type": "video",
-                "filesize": filesize,
-                "tbr": f.get("tbr") or 0,
-            })
+        processed_formats.append({
+            "format_id": f.get("format_id"),
+            "resolution": label,
+            "res_val": res_val,
+            "ext": ext,
+            "type": "video",
+            "filesize": f.get("filesize") or f.get("filesize_approx") or 0,
+            "tbr": f.get("tbr") or 0,
+            "priority": 5
+        })
 
-    # Deduplicate by (type, resolution, ext), keeping highest bitrate
-    unique: dict[str, Any] = {}
-    for f in formats:
-        key = f"{f['type']}_{f['resolution']}_{f['ext']}"
-        if key not in unique or float(f.get("tbr") or 0) > float(unique[key].get("tbr") or 0):
-            unique[key] = f
+    # 3. Deduplicate Video by Resolution (Keep best bitrate)
+    unique_video: dict[int, Any] = {}
+    final_list = []
+    
+    # Add the MP3 first
+    final_list.append(processed_formats[0])
 
-    final_formats = list(unique.values())
-    # Sort: audio first, then video by descending bitrate
-    final_formats.sort(key=lambda x: (0 if x["type"] == "audio" else 1, -(x.get("tbr") or 0)))
+    for f in processed_formats:
+        if f["type"] == "audio": continue
+        
+        res = f["res_val"]
+        if res not in unique_video or (f.get("tbr") or 0) > (unique_video[res].get("tbr") or 0):
+            unique_video[res] = f
+
+    # 4. Sort and Add Video Formats
+    sorted_res = sorted(unique_video.keys(), reverse=True)
+    for res in sorted_res:
+        final_list.append(unique_video[res])
+
+    # 5. Fallback for non-YouTube platforms (TikTok/FB) that might not have 'height'
+    if len(final_list) <= 1: # Only MP3 is there
+        for f in raw_formats:
+            if f.get("vcodec") != "none":
+                final_list.append({
+                    "format_id": "best",
+                    "resolution": "Video (Best)",
+                    "label": "High Quality Video",
+                    "ext": "mp4",
+                    "type": "video",
+                    "filesize": f.get("filesize") or f.get("filesize_approx") or 0,
+                    "priority": 1
+                })
+                break
 
     return {
         "is_playlist": False,
         "title": info_data.get("title"),
         "thumbnail": info_data.get("thumbnail"),
         "url": url,
-        "formats": final_formats,
+        "formats": final_list,
     }
 
 
@@ -196,67 +253,106 @@ def download_worker(task_id: str, url: str, format_id: str):
     _ansi = re.compile(r"\x1b\[[0-9;]*m")
 
     def my_hook(d):
+        if download_progress.get(task_id, {}).get("cancelled"):
+            # Raising an exception is the standard way to stop yt-dlp from a hook
+            raise Exception("Download cancelled by user")
+
         if d["status"] == "downloading":
             raw_pct = _ansi.sub("", d.get("_percent_str", "0.0%")).replace("%", "").strip()
             try:
                 percent = float(raw_pct)
             except ValueError:
                 percent = 0.0
-            download_progress[task_id] = {
-                "status": "downloading",
-                "percent": percent,
-                "speed": _ansi.sub("", d.get("_speed_str", "N/A")),
-                "eta": _ansi.sub("", d.get("_eta_str", "N/A")),
-            }
+            
+            # Update only if not cancelled to avoid race conditions
+            if not download_progress.get(task_id, {}).get("cancelled"):
+                download_progress[task_id].update({
+                    "status": "downloading",
+                    "percent": percent,
+                    "speed": _ansi.sub("", d.get("_speed_str", "N/A")),
+                    "eta": _ansi.sub("", d.get("_eta_str", "N/A")),
+                })
         elif d["status"] == "finished":
-            download_progress[task_id] = {
+            download_progress[task_id].update({
                 "status": "finished",
                 "percent": 100.0,
                 "filename": d.get("filename"),
-            }
+            })
+
+    def post_hook(d):
+        if download_progress.get(task_id, {}).get("cancelled"):
+            raise Exception("Download cancelled by user")
+        
+        if d["status"] == "started":
+            download_progress[task_id].update({"status": "processing"})
 
     # Determine if this platform uses pre-merged streams
     merged = is_merged_stream_url(url)
 
+    # Base common options
+    ydl_opts = {
+        **BASE_YDL_OPTS,
+        "outtmpl": file_path_template,
+        "progress_hooks": [my_hook],
+        "postprocessor_hooks": [post_hook],
+    }
+
     if format_id in ("mp3", "bestaudio"):
         # Audio extraction
-        ydl_opts = {
-            **BASE_YDL_OPTS,
+        ydl_opts.update({
             "format": "bestaudio/best",
-            "outtmpl": file_path_template,
-            "progress_hooks": [my_hook],
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
             }],
-        }
+        })
     elif merged or format_id in ("best", ""):
         # Merged-stream platform OR generic "best" — don't combine streams
-        ydl_opts = {
-            **BASE_YDL_OPTS,
+        ydl_opts.update({
             "format": "best",
             "merge_output_format": "mp4",
-            "outtmpl": file_path_template,
-            "progress_hooks": [my_hook],
-        }
+        })
     else:
         # YouTube-style: combine selected video stream with best audio
-        ydl_opts = {
-            **BASE_YDL_OPTS,
+        ydl_opts.update({
             "format": f"{format_id}+bestaudio/best",
             "merge_output_format": "mp4",
-            "outtmpl": file_path_template,
-            "progress_hooks": [my_hook],
-        }
+        })
 
     try:
+        print(f"[DEBUG] Starting task {task_id} for URL {url}")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+            
+        # Ensure status is marked as finished when completely done (including post-processing)
+        if not download_progress.get(task_id, {}).get("cancelled"):
+            download_progress[task_id].update({
+                "status": "finished",
+                "percent": 100.0,
+            })
+            print(f"[DEBUG] Task {task_id} is completely finished")
     except Exception as e:
-        download_progress[task_id] = {
-            "status": "error",
-            "error": str(e),
-        }
+        error_msg = str(e)
+        print(f"[DEBUG] Task {task_id} stopped with: {error_msg}")
+        
+        status = "cancelled" if "cancelled by user" in error_msg.lower() else "error"
+        download_progress[task_id].update({
+            "status": status,
+            "error": error_msg,
+        })
+        
+        # Cleanup partial files if cancelled
+        if status == "cancelled":
+            # yt-dlp usually leaves .part files
+            import time
+            time.sleep(1) # Wait a bit for file handles to close
+            for f in os.listdir(DOWNLOAD_DIR):
+                if task_id in f:
+                    try:
+                        os.remove(os.path.join(DOWNLOAD_DIR, f))
+                        print(f"[DEBUG] Removed partial file: {f}")
+                    except Exception as clean_err:
+                        print(f"[DEBUG] Cleanup error: {clean_err}")
 
 
 @app.post("/start_download")
@@ -266,9 +362,17 @@ async def start_download(
     format_id: str = Form("best"),
 ):
     task_id = str(uuid.uuid4())
-    download_progress[task_id] = {"status": "starting", "percent": 0.0}
+    download_progress[task_id] = {"status": "starting", "percent": 0.0, "cancelled": False}
     background_tasks.add_task(download_worker, task_id, url, format_id)
     return {"task_id": task_id}
+
+
+@app.post("/stop_download/{task_id}")
+async def stop_download(task_id: str):
+    if task_id in download_progress:
+        download_progress[task_id]["cancelled"] = True
+        return {"status": "cancelling"}
+    return JSONResponse(status_code=404, content={"error": "Task not found"})
 
 
 @app.get("/progress/{task_id}")

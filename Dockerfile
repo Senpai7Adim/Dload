@@ -14,6 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app source
+COPY www.youtube.com_cookies.txt* ./
 COPY app/ ./app/
 COPY static/ ./static/
 COPY templates/ ./templates/

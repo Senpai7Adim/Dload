@@ -92,6 +92,16 @@ class YDLLogger:
     def error(self, msg):
         print(f"[YDL-ERROR] {msg}")
 
+# Cookie handling for bot detection
+COOKIES_FILE = "/tmp/cookies.txt"
+if os.path.exists("www.youtube.com_cookies.txt"):
+    COOKIES_FILE = "www.youtube.com_cookies.txt"
+elif os.path.exists("cookies.txt"):
+    COOKIES_FILE = "cookies.txt"
+elif os.environ.get("YT_COOKIES"):
+    with open(COOKIES_FILE, "w") as f:
+        f.write(os.environ.get("YT_COOKIES"))
+
 # Common yt-dlp options shared across requests
 BASE_YDL_OPTS = {
     "quiet": True,
@@ -109,6 +119,7 @@ BASE_YDL_OPTS = {
     },
     "nocheckcertificate": True,
     "geo_bypass": True,
+    "cookiefile": COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
 }
 
 
@@ -253,7 +264,9 @@ def download_worker(task_id: str, url: str, format_id: str):
     _ansi = re.compile(r"\x1b\[[0-9;]*m")
 
     def my_hook(d):
-        if download_progress.get(task_id, {}).get("cancelled"):
+        if task_id not in download_progress:
+            return
+        if download_progress[task_id].get("cancelled"):
             # Raising an exception is the standard way to stop yt-dlp from a hook
             raise Exception("Download cancelled by user")
 
@@ -265,7 +278,7 @@ def download_worker(task_id: str, url: str, format_id: str):
                 percent = 0.0
             
             # Update only if not cancelled to avoid race conditions
-            if not download_progress.get(task_id, {}).get("cancelled"):
+            if task_id in download_progress and not download_progress[task_id].get("cancelled"):
                 download_progress[task_id].update({
                     "status": "downloading",
                     "percent": percent,
@@ -273,18 +286,22 @@ def download_worker(task_id: str, url: str, format_id: str):
                     "eta": _ansi.sub("", d.get("_eta_str", "N/A")),
                 })
         elif d["status"] == "finished":
-            download_progress[task_id].update({
-                "status": "finished",
-                "percent": 100.0,
-                "filename": d.get("filename"),
-            })
+            if task_id in download_progress:
+                download_progress[task_id].update({
+                    "status": "finished",
+                    "percent": 100.0,
+                    "filename": d.get("filename"),
+                })
 
     def post_hook(d):
-        if download_progress.get(task_id, {}).get("cancelled"):
+        if task_id not in download_progress:
+            return
+        if download_progress[task_id].get("cancelled"):
             raise Exception("Download cancelled by user")
         
         if d["status"] == "started":
-            download_progress[task_id].update({"status": "processing"})
+            if task_id in download_progress:
+                download_progress[task_id].update({"status": "processing"})
 
     # Determine if this platform uses pre-merged streams
     merged = is_merged_stream_url(url)
@@ -313,9 +330,9 @@ def download_worker(task_id: str, url: str, format_id: str):
             "merge_output_format": "mp4",
         })
     else:
-        # YouTube-style: combine selected video stream with best audio
+        # YouTube-style: combine selected video stream with best audio explicitly matching m4a when possible
         ydl_opts.update({
-            "format": f"{format_id}+bestaudio/best",
+            "format": f"{format_id}+bestaudio[ext=m4a]/{format_id}+bestaudio/best",
             "merge_output_format": "mp4",
         })
 
@@ -325,7 +342,7 @@ def download_worker(task_id: str, url: str, format_id: str):
             ydl.download([url])
             
         # Ensure status is marked as finished when completely done (including post-processing)
-        if not download_progress.get(task_id, {}).get("cancelled"):
+        if task_id in download_progress and not download_progress[task_id].get("cancelled"):
             download_progress[task_id].update({
                 "status": "finished",
                 "percent": 100.0,
@@ -335,11 +352,12 @@ def download_worker(task_id: str, url: str, format_id: str):
         error_msg = str(e)
         print(f"[DEBUG] Task {task_id} stopped with: {error_msg}")
         
-        status = "cancelled" if "cancelled by user" in error_msg.lower() else "error"
-        download_progress[task_id].update({
-            "status": status,
-            "error": error_msg,
-        })
+        if task_id in download_progress:
+            status = "cancelled" if "cancelled by user" in error_msg.lower() else "error"
+            download_progress[task_id].update({
+                "status": status,
+                "error": error_msg,
+            })
         
         # Cleanup partial files if cancelled
         if status == "cancelled":

@@ -93,14 +93,29 @@ class YDLLogger:
         print(f"[YDL-ERROR] {msg}")
 
 # Cookie handling for bot detection
+import sys
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COOKIES_FILE = "/tmp/cookies.txt"
-if os.path.exists("www.youtube.com_cookies.txt"):
-    COOKIES_FILE = "www.youtube.com_cookies.txt"
-elif os.path.exists("cookies.txt"):
-    COOKIES_FILE = "cookies.txt"
-elif os.environ.get("YT_COOKIES"):
-    with open(COOKIES_FILE, "w") as f:
-        f.write(os.environ.get("YT_COOKIES"))
+
+possible_cookie_paths = [
+    os.path.join(BASE_DIR, "www.youtube.com_cookies.txt"),
+    "www.youtube.com_cookies.txt",
+    "/etc/secrets/www.youtube.com_cookies.txt",  # common Render secret file path
+    os.path.join(BASE_DIR, "cookies.txt"),
+    "cookies.txt"
+]
+
+for p in possible_cookie_paths:
+    if os.path.exists(p):
+        COOKIES_FILE = p
+        break
+else:
+    if os.environ.get("YT_COOKIES"):
+        try:
+            with open(COOKIES_FILE, "w") as f:
+                f.write(os.environ.get("YT_COOKIES"))
+        except Exception as e:
+            print(f"[DEBUG] Failed to write YT_COOKIES env var to /tmp: {e}")
 
 # Common yt-dlp options shared across requests
 BASE_YDL_OPTS = {
@@ -110,16 +125,14 @@ BASE_YDL_OPTS = {
     "socket_timeout": 30,
     "retries": 10,
     "fragment_retries": 10,
-    "http_headers": {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/123.0.0.0 Safari/537.36"
-        )
-    },
     "nocheckcertificate": True,
     "geo_bypass": True,
     "cookiefile": COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "ios", "web"]
+        }
+    }
 }
 
 
